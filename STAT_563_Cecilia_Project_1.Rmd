@@ -1,5 +1,5 @@
 ---
-title: "Cecilia's Project 1"
+title: "Cecilia's Lab Project 1"
 output:
   html_notebook: default
   pdf_document: default
