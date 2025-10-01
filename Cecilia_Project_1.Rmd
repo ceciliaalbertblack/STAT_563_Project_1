@@ -1,0 +1,1287 @@
+---
+title: "Cecilia's Project 1"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+## Introduction & Data Summary
+
+Below is my work and write up for Project 1 of STAT 563 fall 2025.
+
+Assignment goal: to apply MLE and IC to identify the most appropriate PDF to a simulated data and a given data set. The simulated data was given by Dr. Bozdogan and is found in the repo. The real-world data pertains to my graduate research and is not publicly available since it's property of Oak Ridge National Laboratory. Therefore, I will not be attaching the dataset in the repo, but all code performed on it will be displayed on the R Notebook file available in the repo.
+
+Disclaimer: I used assistance from ChatGPT to develop the code.
+
+## Simulated Dataset
+
+### Phase 1. Data Acquisition and Preparation
+
+#### 1.1. Data Selection
+
+The simulated data is given in Raw_Project_data.xlsx.
+
+Set working directory to the repo and uplaod the simulated dataset:
+
+```{r}
+setwd("C:/Users/q4q/repos/STAT_563_Project_1")  
+# load package (must be installed first) 
+library(readxl)  
+Raw_Project_Data <- read_excel("STAT 563 LAB PROJECT#1 FALL_2025 WRITE UP CANVAS/MATLAB MODULES FOR STAT563 PROJECT#1_FALL_2025/Raw_Project_Data.xlsx",      sheet = "Sheet1") 
+View(Raw_Project_Data)
+```
+
+Inspect the structure of the data
+
+```{r}
+str(Raw_Project_Data)
+```
+
+Rename the only column
+
+```{r}
+Raw_Project_Data$variable <- Raw_Project_Data$`6.6037011007369806` 
+str(Raw_Project_Data)
+```
+
+Now that we've uploaded the dataset, let's find its sample size (n):
+
+```{r}
+
+n <- length(Raw_Project_Data$variable)
+n
+```
+
+#### 1.2. EDA
+
+Histogram of variable
+
+```{r}
+hist(Raw_Project_Data$variable)
+```
+
+Compute descriptive statistics for the variable
+
+```{r}
+
+library(dplyr)
+library(e1071)  # for skewness and kurtosis
+
+vec <- Raw_Project_Data$variable
+
+summary_table <- tibble(
+  stat = c("mean", "median", "skewness", "kurtosis"),
+  value = c(
+    mean(vec, na.rm = TRUE),
+    median(vec, na.rm = TRUE),
+    skewness(vec, na.rm = TRUE),
+    kurtosis(vec, na.rm = TRUE)
+  )
+) %>%
+  mutate(value = round(as.numeric(value), 3))
+
+summary_table
+
+```
+
+This variable is not Gaussian since the mean and median are not close to each other and skewness is greater than 0. Since skewness is \>0, the variable is right-skewed, as supported by the histogram too. This means the mean \> median and has a heavy right-sided tail which indicates high-magnitude outliers in the data.
+
+### Phase 2. Candidate Model Fitting
+
+Selection and fitting of 5 distinct, non-trivial continuous PDF whose characteristics match the variable's EDA.
+
+#### 2.1. Define the Likelihood Functions
+
+Define the 5 likelihood function where x is the variable and theta are the estimated parameters:
+
+```{r}
+
+# First, define x
+x <- Raw_Project_Data$variable
+
+# ---------------------------
+# 1. Normal
+# ---------------------------
+
+loglik_norm <- function(theta, x) {
+  mu <- theta[1] # mean
+  sigma <- theta[2] # standard deviation
+  
+  # constrain sigma > 0
+  if (sigma <= 0) return(-Inf)
+  
+  sum(dnorm(x, mean = mu, sd = sigma, log = TRUE))
+}
+
+# ---------------------------
+# 2. Inverse-Gaussian
+# ---------------------------
+
+loglik_ig <- function(theta, x) {
+  mu <- theta[1]      # mean
+  lambda <- theta[2]  # shape parameter
+  if(mu <= 0 | lambda <= 0) return(-Inf)
+  sum(dinvgauss(x, mean = mu, shape = lambda, log = TRUE))
+}
+
+# ---------------------------
+# 3. Weibull
+# ---------------------------
+
+loglik_weib <- function(theta, x) {
+  shape <- theta[1]
+  scale <- theta[2]
+  if(shape <= 0 | scale <= 0) return(-Inf)
+  sum(dweibull(x, shape = shape, scale = scale, log = TRUE))
+}
+
+# ---------------------------
+# 4. Lognormal
+# ---------------------------
+
+loglik_lognorm <- function(theta, x) {
+  meanlog <- theta[1]  # mean of log(x)
+  sdlog <- theta[2]    # sd of log(x)
+  if(sdlog <= 0) return(-Inf)
+  sum(dlnorm(x, meanlog = meanlog, sdlog = sdlog, log = TRUE))
+}
+
+# ---------------------------
+# 5. Gamma
+# ---------------------------
+
+loglik_gamma <- function(theta, x) {
+  shape <- theta[1]
+  rate <- theta[2]
+  if(shape <= 0 | rate <= 0) return(-Inf)
+  sum(dgamma(x, shape = shape, rate = rate, log = TRUE))
+}
+
+```
+
+#### 2.2. MLE
+
+Use a numerical optimizer (optim) to find the parameter estimates theta that maximizes the log-likelihood function and provide the maximum value:
+
+```{r}
+# -----------------------------
+# Load libraries
+# -----------------------------
+library(dplyr)
+library(tibble)
+library(statmod)  # for Inverse-Gaussian
+library(ggplot2)
+
+# -----------------------------
+# Define your data
+# -----------------------------
+x <- Raw_Project_Data$variable
+x <- x[!is.na(x)]  # remove NAs
+
+# -----------------------------
+# Helper function for MLE
+# -----------------------------
+run_mle <- function(loglik_fun, x, init_theta, param_names, lower_bounds) {
+  
+  neg_loglik <- function(theta, x) {
+    val <- -loglik_fun(theta, x)
+    if(!is.finite(val)) val <- 1e10  # prevent optim failure
+    return(val)
+  }
+  
+  fit <- optim(
+    par = init_theta,
+    fn = neg_loglik,
+    x = x,
+    method = "L-BFGS-B",
+    lower = lower_bounds
+  )
+  
+  result_table <- tibble(
+    parameter = param_names,
+    estimate  = fit$par
+  ) %>%
+    bind_rows(
+      tibble(
+        parameter = "max_log_likelihood",
+        estimate  = -fit$value
+      )
+    ) %>%
+    mutate(estimate = round(estimate, 3))
+  
+  list(results = result_table, m = length(fit$par), fit = fit)
+}
+
+# -----------------------------
+# 1. Normal
+# -----------------------------
+loglik_norm <- function(theta, x) {
+  mu <- theta[1]
+  sigma <- theta[2]
+  if(sigma <= 0) return(-Inf)
+  sum(dnorm(x, mean = mu, sd = sigma, log = TRUE))
+}
+
+init_norm <- c(mean(x), sd(x))
+norm_res <- run_mle(loglik_norm, x, init_norm, c("mu_hat","sigma_hat"), c(-Inf, 1e-6))
+
+# -----------------------------
+# 2. Inverse-Gaussian
+# -----------------------------
+loglik_ig <- function(theta, x) {
+  mu <- theta[1]
+  lambda <- theta[2]
+  if(mu <= 0 | lambda <= 0) return(-Inf)
+  sum(dinvgauss(x, mean = mu, shape = lambda, log = TRUE))
+}
+
+init_ig <- c(mean(x), 1)
+ig_res <- run_mle(loglik_ig, x, init_ig, c("mu_hat","lambda_hat"), c(1e-6, 1e-6))
+
+# -----------------------------
+# 3. Weibull
+# -----------------------------
+x_weib <- x[x > 0]  # Weibull requires positive data
+
+loglik_weib <- function(theta, x) {
+  shape <- theta[1]
+  scale <- theta[2]
+  if(shape <= 0 | scale <= 0) return(-Inf)
+  sum(dweibull(x, shape = shape, scale = scale, log = TRUE))
+}
+
+init_weib <- c(1.2, mean(x_weib))
+weib_res <- run_mle(loglik_weib, x_weib, init_weib, c("shape_hat","scale_hat"), c(1e-6, 1e-6))
+
+# -----------------------------
+# 4. Lognormal
+# -----------------------------
+x_lognorm <- x[x > 0]  # Lognormal requires positive data
+
+loglik_lognorm <- function(theta, x) {
+  meanlog <- theta[1]
+  sdlog <- theta[2]
+  if(sdlog <= 0) return(-Inf)
+  sum(dlnorm(x, meanlog = meanlog, sdlog = sdlog, log = TRUE))
+}
+
+init_lognorm <- c(mean(log(x_lognorm)), sd(log(x_lognorm)))
+lognorm_res <- run_mle(loglik_lognorm, x_lognorm, init_lognorm, c("meanlog_hat","sdlog_hat"), c(-Inf, 1e-6))
+
+# -----------------------------
+# 5. Gamma
+# -----------------------------
+x_gamma <- x[x > 0]
+
+loglik_gamma <- function(theta, x) {
+  shape <- theta[1]
+  rate <- theta[2]
+  if(shape <= 0 | rate <= 0) return(-Inf)
+  sum(dgamma(x, shape = shape, rate = rate, log = TRUE))
+}
+
+init_gamma <- c(1, 1/mean(x_gamma))
+gamma_res <- run_mle(loglik_gamma, x_gamma, init_gamma, c("shape_hat","rate_hat"), c(1e-6, 1e-6))
+
+# -----------------------------
+# Log-likelihood summary (best among models)
+# -----------------------------
+loglik_entry <- tibble(
+  distribution = "Log-likelihood",
+  parameter = "best_max_log_likelihood",
+  estimate = max(
+    norm_res$results$estimate[norm_res$results$parameter == "max_log_likelihood"],
+    ig_res$results$estimate[ig_res$results$parameter == "max_log_likelihood"],
+    weib_res$results$estimate[weib_res$results$parameter == "max_log_likelihood"],
+    lognorm_res$results$estimate[lognorm_res$results$parameter == "max_log_likelihood"],
+    gamma_res$results$estimate[gamma_res$results$parameter == "max_log_likelihood"]
+  )
+)
+
+# -----------------------------
+# Combine all results
+# -----------------------------
+all_results <- bind_rows(
+  norm_res$results %>% mutate(distribution = "Normal"),
+  ig_res$results %>% mutate(distribution = "Inverse-Gaussian"),
+  weib_res$results %>% mutate(distribution = "Weibull"),
+  lognorm_res$results %>% mutate(distribution = "Lognormal"),
+  gamma_res$results %>% mutate(distribution = "Gamma"),
+  loglik_entry
+) %>%
+  select(distribution, parameter, estimate) %>%
+  arrange(distribution)
+
+# Display final tidy results table
+all_results
+
+```
+
+Normal Distribution
+
+-   mu_hat: The estimated mean (average) of the data, μ.
+
+-   sigma_hat: The estimated standard deviation of the data, σ, which measures spread around the mean.
+
+-   max_log_likelihood: The value of the log-likelihood function evaluated at the estimated parameters μ̂ and σ̂. It represents how well the Normal distribution fits the data.
+
+Inverse-Gaussian Distribution
+
+-   mu_hat: The estimated mean of the distribution, μ, which reflects the central tendency of the data.
+
+-   lambda_hat: The estimated shape parameter λ, which controls the variance (larger λ → smaller variance).
+
+-   max_log_likelihood: The log-likelihood value at μ̂ and λ̂, indicating fit quality.
+
+Weibull Distribution
+
+-   shape_hat: The estimated shape parameter k. Determines the “form” of the distribution (e.g., exponential-like if k≈1, bell-shaped if k\>1).
+
+-   scale_hat: The estimated scale parameter λ (sometimes denoted β), stretching or compressing the distribution along the x-axis.
+
+-   max_log_likelihood: The log-likelihood at the estimated shape and scale parameters.
+
+Lognormal Distribution
+
+-   meanlog_hat: The mean of the natural logarithm of the data, μ_log. It characterizes the log-transformed central tendency.
+
+-   sdlog_hat: The standard deviation of the natural logarithm of the data, σ_log. It governs the spread of the distribution on the log scale (and hence skewness on the original scale).
+
+-   max_log_likelihood: The log-likelihood value at μ̂\_log and σ̂\_log, indicating fit quality.
+
+Gamma Distribution
+
+-   shape_hat: The estimated shape parameter k (sometimes α). Determines the form of the distribution.
+
+-   rate_hat: The estimated rate parameter θ (inverse of scale). Related to scale by scale = 1/rate. Controls how stretched or compressed the distribution is.
+
+-   max_log_likelihood: Log-likelihood at the estimated shape and rate, indicating how well the Gamma distribution fits the data.
+
+#### 2.3. Count Parameters (m)
+
+Count the number of free (estimated) parameters using the log-likelihood function. This will be used to calculate IC.
+
+```{r}
+# Count number of free parameters for each distribution
+m_params <- tibble(
+  distribution = c("Normal", "Inverse-Gaussian", "Weibull", "Beta", "Gamma"),
+  m_parameters  = c(
+    length(norm_res$fit$par),
+    length(ig_res$fit$par),
+    length(weib_res$fit$par),
+    length(beta_res$fit$par),
+    length(gamma_res$fit$par)
+  )
+)
+
+m_params
+```
+
+#### 2.4. Visualize
+
+Overlay of the fitted PDF (using estimated parameters) onto the histogram:
+
+```{r}
+library(ggplot2)
+
+# Extract data
+x <- Raw_Project_Data$variable
+x <- x[!is.na(x)]
+
+# Store estimated parameters
+params <- list(
+  Normal = list(mu = norm_res$fit$par[1], sigma = norm_res$fit$par[2]),
+  InverseGaussian = list(mu = ig_res$fit$par[1], lambda = ig_res$fit$par[2]),
+  Weibull = list(shape = weib_res$fit$par[1], scale = weib_res$fit$par[2]),
+  Lognormal = list(meanlog = lognorm_res$fit$par[1], sdlog = lognorm_res$fit$par[2]),
+  Gamma = list(shape = gamma_res$fit$par[1], rate = gamma_res$fit$par[2])
+)
+
+# Helper function for minimal histogram + PDF
+plot_pdf <- function(x_data, fun_pdf, title, color_line="red", fill_hist="grey") {
+  ggplot(data.frame(x=x_data), aes(x=x)) +
+    geom_histogram(aes(y=..density..), bins=30, fill=fill_hist, color=NA, alpha=0.6) +
+    stat_function(fun=fun_pdf, color=color_line, size=1) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(hjust=0.5))
+}
+
+# Create plots
+plot_list <- list()
+
+# Normal
+plot_list$Normal <- plot_pdf(
+  x_data = x,
+  fun_pdf = function(x) dnorm(x, mean=params$Normal$mu, sd=params$Normal$sigma),
+  title = "Normal",
+  color_line="red",
+  fill_hist="lightblue"
+)
+
+# Inverse-Gaussian
+plot_list$InverseGaussian <- plot_pdf(
+  x_data = x,
+  fun_pdf = function(x) dinvgauss(x, mean=params$InverseGaussian$mu, shape=params$InverseGaussian$lambda),
+  title = "Inverse-Gaussian",
+  color_line="darkgreen",
+  fill_hist="lightgreen"
+)
+
+# Weibull (x>0)
+x_weib <- x[x>0]
+plot_list$Weibull <- plot_pdf(
+  x_data = x_weib,
+  fun_pdf = function(x) dweibull(x, shape=params$Weibull$shape, scale=params$Weibull$scale),
+  title = "Weibull",
+  color_line="blue",
+  fill_hist="lightpink"
+)
+
+# Lognormal (x>0)
+x_lognorm <- x[x>0]
+plot_list$Lognormal <- plot_pdf(
+  x_data = x_lognorm,
+  fun_pdf = function(x) dlnorm(x, meanlog=params$Lognormal$meanlog, sdlog=params$Lognormal$sdlog),
+  title = "Lognormal",
+  color_line="purple",
+  fill_hist="lavender"
+)
+
+# Gamma (x>0)
+x_gamma <- x[x>0]
+plot_list$Gamma <- plot_pdf(
+  x_data = x_gamma,
+  fun_pdf = function(x) dgamma(x, shape=params$Gamma$shape, rate=params$Gamma$rate),
+  title = "Gamma",
+  color_line="orange",
+  fill_hist="mistyrose"
+)
+
+# Display plots individually
+plot_list$Normal
+plot_list$InverseGaussian
+plot_list$Weibull
+plot_list$Lognormal
+plot_list$Gamma
+
+```
+
+What I notice initially is how distinct the Beta PDF fits the data, it seems to be over fitting the data. Therefore, I will omit it from the subsequent model fitting phases.
+
+### Phase 3. Model Fitting
+
+Using the results from Phase 2, we'll calculate 3 different IC for each of the 5 PDFs.
+
+The best model is the one that yields the lowest IC values.
+
+We'll use the following 3 ICs:
+
+-   Akaike IC (AIC)
+
+-   Schwarz Bayesian C (SBC)
+
+-   Information Complexity (ICOMP)
+
+```{r}
+library(dplyr)
+library(tibble)
+library(purrr)  # for map_dfr
+
+# Combine results for all distributions
+dist_list <- list(
+  Normal = norm_res,
+  InverseGaussian = ig_res,
+  Weibull = weib_res,
+  Lognormal = lognorm_res,
+  Gamma = gamma_res
+)
+
+# Function to calculate ICs
+calc_ic <- function(res, n) {
+  logL <- -res$fit$value   # MLE log-likelihood (optim minimizes negative LL)
+  m <- res$m               # number of free parameters
+  
+  AIC  <- 2*m - 2*logL
+  SBC  <- log(n)*m - 2*logL   # BIC / Schwarz criterion
+  # ICOMP (approximate version using C1 complexity = m)
+  ICOMP <- -2*logL + 2*m
+  
+  tibble(
+    AIC = round(AIC, 2),
+    SBC = round(SBC, 2),
+    ICOMP = round(ICOMP, 2)
+  )
+}
+
+# Sample size
+n <- length(x)
+
+# Calculate ICs for all distributions
+ic_table <- map_dfr(names(dist_list), function(dist_name) {
+  res <- dist_list[[dist_name]]
+  calc_ic(res, n) %>%
+    mutate(distribution = dist_name)
+}) %>%
+  select(distribution, everything())
+
+# Display table
+ic_table
+
+```
+
+Select the best fitting model:
+
+```{r}
+library(dplyr)
+
+# Function to select best model for each IC
+select_best_model <- function(ic_table) {
+  ic_table %>%
+    summarise(
+      best_AIC   = distribution[which.min(AIC)],
+      best_SBC   = distribution[which.min(SBC)],
+      best_ICOMP = distribution[which.min(ICOMP)]
+    ) %>%
+    pivot_longer(everything(), names_to = "criterion", values_to = "best_model")
+}
+
+# Apply function
+best_models <- select_best_model(ic_table)
+
+# Display results
+best_models
+
+```
+
+The variable is best fitted by the Gamma distribution.
+
+### Phase 4. Kernel Density Estimation
+
+Perform a kernel density estimation (KDE) of the dataset and report the optimal bandwidth value and the IC.
+
+A KDE determines the shape a distribution and how each shape contributes to the overall density.
+
+For the sake of simplicity, we'll use the Gaussian kernel, which produces a smooth, bell-shaped curve. However, other kernels exist: Epanechnikov, rectangular, triangular, etc.
+
+Since the KDE is non-parametric, it doesn’t have explicit parameter estimates like mu and theta for a Normal distribution. But we still want to compare it to parametric models using information criteria (AIC, BIC, ICOMP), which require the log-likelihood estimation (L).
+
+```{r}
+library(dplyr)
+library(tibble)
+
+# Extract data
+x <- Raw_Project_Data$variable
+x <- x[!is.na(x)]
+
+# -----------------------------
+# 1. Kernel Density Estimation
+# -----------------------------
+kde <- density(x, kernel = "gaussian")  # default Gaussian kernel
+# kde$bw is the bandwidth used
+
+bw_opt <- kde$bw  # optimal bandwidth
+bw_opt
+
+# -----------------------------
+# 2. Estimate log-likelihood for KDE
+# -----------------------------
+# Approximate log-likelihood by summing log-density at observed points
+# We use approx() to interpolate density estimates at data points
+log_density_at_x <- approx(kde$x, kde$y, xout = x)$y
+logL_kde <- sum(log(log_density_at_x))  # log-likelihood
+
+# Number of parameters in KDE: effective number = 1 (bandwidth)
+m_kde <- 1  
+
+# -----------------------------
+# 3. Compute ICs
+# -----------------------------
+n <- length(x)
+
+AIC_kde  <- 2*m_kde - 2*logL_kde
+SBC_kde  <- log(n)*m_kde - 2*logL_kde
+ICOMP_kde <- -2*logL_kde + 2*m_kde
+
+ic_kde <- tibble(
+  method = "KDE",
+  bandwidth = round(bw_opt, 3),
+  log_likelihood = round(logL_kde, 3),
+  AIC = round(AIC_kde, 3),
+  SBC = round(SBC_kde, 3),
+  ICOMP = round(ICOMP_kde, 3)
+)
+
+ic_kde
+
+```
+
+Now let's compare the ICs of the best fitting parametric PDF and the non-parametric KDF:
+
+```{r}
+library(dplyr)
+library(tibble)
+
+# Extract Beta ICs
+beta_ic <- ic_table %>% 
+  filter(distribution == "Gamma") %>%
+  select(distribution, AIC, SBC, ICOMP)
+
+# Extract KDE ICs
+kde_ic <- ic_kde %>%
+  select(method, AIC, SBC, ICOMP) %>%
+  rename(distribution = method)
+
+# Combine Beta and KDE ICs
+comparison_ic <- bind_rows(beta_ic, kde_ic) %>%
+  arrange(AIC)  # optional: sort by AIC
+
+# Display table
+comparison_ic
+
+```
+
+To select the best fitting model:
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Function to select best model (lowest IC) for each criterion
+select_best_ic_model <- function(ic_table) {
+  ic_table %>%
+    summarise(
+      best_AIC   = distribution[which.min(AIC)],
+      best_SBC   = distribution[which.min(SBC)],
+      best_ICOMP = distribution[which.min(ICOMP)]
+    ) %>%
+    pivot_longer(everything(), names_to = "criterion", values_to = "best_model")
+}
+
+# Apply function to comparison table
+best_model_ic <- select_best_ic_model(comparison_ic)
+
+# Display results
+best_model_ic
+```
+
+### Conclusion
+
+Based on the model comparison of parametric PDFs (Gamma, Inverse-Gaussian, Normal, and Weibull) using three information criteria (AIC, SBC, and ICOMP), the Gamma probability density function emerged as the best-fitting parametric model. However, when we extended the comparison to include the non-parametric Gaussian Kernel Density Estimation (KDE), the KDE provided a superior fit, achieving lower information criterion values than the Gamma distribution. This result highlights the flexibility of non-parametric methods, which can capture the finer structure of the data without imposing strong distributional assumptions, though at the expense of parsimony.
+
+The estimated parameters of the Gamma distribution, shape (2.834) and rate (0.481), provide interpretable insights into the data’s structure: the shape parameter indicates a moderately right-skewed distribution, while the rate parameter controls the decay of the tail. Together, these parameters summarize the distribution in a compact form, but the KDE’s improved performance suggests that the data exhibit complexities not fully captured by a single parametric family. This finding emphasizes the importance of balancing interpretability (via parametric models like Gamma) with flexibility (via non-parametric approaches like KDE) when modeling empirical data.
+
+## Real-World Dataset
+
+The real-world data was collected using a Stream Temperature, Intermittency, and Conductivity (STIC) data logger at one site on a perennial stream which collected data over course of 2 years every few minutes. The only variable of interest will be the Temp column which is a measure of temperature in Celsius.
+
+### Phase 1. Data Acquisition and Preparation
+
+#### 1.1. Data Selection
+
+First, we'll upload the simulated dataset from my local computer:
+
+```{r}
+#load package (must be installed first)
+library(readr)  
+STIC_MCA1_data <- read_csv("C:/Users/q4q/OneDrive - Oak Ridge National Laboratory/Research/Time Series Project/STIC Sensor Data/STIC_MCA1_data.csv")  
+head(STIC_MCA1_data)
+```
+
+Let's inspect the data structure
+
+```{r}
+str(STIC_MCA1_data)
+```
+
+Now define its sample size (n):
+
+```{r}
+n <- length(STIC_MCA1_data$Temp)
+n
+```
+
+#### 1.2. EDA
+
+Histogram of temperature
+
+```{r}
+hist(STIC_MCA1_data$Temp)
+```
+
+Compute descriptive statistics for the variable
+
+```{r}
+library(dplyr)
+library(e1071)  # for skewness and kurtosis
+
+vec <- STIC_MCA1_data$Temp
+
+summary_table2 <- tibble(
+  stat = c("mean", "median", "skewness", "kurtosis"),
+  value = c(
+    mean(vec, na.rm = TRUE),
+    median(vec, na.rm = TRUE),
+    skewness(vec, na.rm = TRUE),
+    kurtosis(vec, na.rm = TRUE)
+  )
+) %>%
+  mutate(value = round(as.numeric(value), 3))
+
+summary_table2
+
+```
+
+This shows that temperature is close to Gaussian since the mean and median are similar and skewness is close to 0. However kurtosis is \<0, meaning temperature displays a platykurtic distribution (wide and lacking a peak/central tendency). Also, from observing the histogram, it seems bimodal.
+
+### Phase 2. Candidate Model Fitting
+
+Selection and fitting of 5 distinct, non-trivial continuous PDF whose characteristics match the variable's EDA.
+
+#### 2.1. Define the Likelihood Functions
+
+Define the 5 likelihood function where x is the variable and theta are the estimated parameters:
+
+```{r}
+# First, define x
+x <- STIC_MCA1_data$Temp
+
+# ---------------------------
+# 1. Normal
+# ---------------------------
+
+loglik_norm <- function(theta, x) {
+  mu <- theta[1] # mean
+  sigma <- theta[2] # standard deviation
+  
+  # constrain sigma > 0
+  if (sigma <= 0) return(-Inf)
+  
+  sum(dnorm(x, mean = mu, sd = sigma, log = TRUE))
+}
+
+# ---------------------------
+# 2. Inverse-Gaussian
+# ---------------------------
+
+loglik_ig <- function(theta, x) {
+  mu <- theta[1]      # mean
+  lambda <- theta[2]  # shape parameter
+  if(mu <= 0 | lambda <= 0) return(-Inf)
+  sum(dinvgauss(x, mean = mu, shape = lambda, log = TRUE))
+}
+
+# ---------------------------
+# 3. Weibull
+# ---------------------------
+
+loglik_weib <- function(theta, x) {
+  shape <- theta[1]
+  scale <- theta[2]
+  if(shape <= 0 | scale <= 0) return(-Inf)
+  sum(dweibull(x, shape = shape, scale = scale, log = TRUE))
+}
+
+# ---------------------------
+# 4. Lognormal
+# ---------------------------
+
+loglik_lognorm <- function(theta, x) {
+  meanlog <- theta[1]  # mean of log(x)
+  sdlog <- theta[2]    # sd of log(x)
+  if(sdlog <= 0) return(-Inf)
+  sum(dlnorm(x, meanlog = meanlog, sdlog = sdlog, log = TRUE))
+}
+
+# ---------------------------
+# 5. Gamma
+# ---------------------------
+
+loglik_gamma <- function(theta, x) {
+  shape <- theta[1]
+  rate <- theta[2]
+  if(shape <= 0 | rate <= 0) return(-Inf)
+  sum(dgamma(x, shape = shape, rate = rate, log = TRUE))
+}
+
+```
+
+#### 2.2. MLE
+
+Use a numerical optimizer (optim) to find the parameter estimates theta that maximizes the log-likelihood function and provide the maximum value:
+
+```{r}
+# -----------------------------
+# Load libraries
+# -----------------------------
+library(dplyr)
+library(tibble)
+library(statmod)  # for Inverse-Gaussian
+library(ggplot2)
+
+# -----------------------------
+# Helper function for MLE
+# -----------------------------
+run_mle <- function(loglik_fun, x, init_theta, param_names, lower_bounds) {
+  
+  neg_loglik <- function(theta, x) {
+    val <- -loglik_fun(theta, x)
+    if(!is.finite(val)) val <- 1e10  # prevent optim failure
+    return(val)
+  }
+  
+  fit <- optim(
+    par = init_theta,
+    fn = neg_loglik,
+    x = x,
+    method = "L-BFGS-B",
+    lower = lower_bounds
+  )
+  
+  result_table <- tibble(
+    parameter = param_names,
+    estimate  = fit$par
+  ) %>%
+    bind_rows(
+      tibble(
+        parameter = "max_log_likelihood",
+        estimate  = -fit$value
+      )
+    ) %>%
+    mutate(estimate = round(estimate, 3))
+  
+  list(results = result_table, m = length(fit$par), fit = fit)
+}
+
+# -----------------------------
+# 1. Normal
+# -----------------------------
+loglik_norm <- function(theta, x) {
+  mu <- theta[1]
+  sigma <- theta[2]
+  if(sigma <= 0) return(-Inf)
+  sum(dnorm(x, mean = mu, sd = sigma, log = TRUE))
+}
+
+init_norm <- c(mean(x), sd(x))
+norm_res <- run_mle(loglik_norm, x, init_norm, c("mu_hat","sigma_hat"), c(-Inf, 1e-6))
+
+# -----------------------------
+# 2. Inverse-Gaussian
+# -----------------------------
+loglik_ig <- function(theta, x) {
+  mu <- theta[1]
+  lambda <- theta[2]
+  if(mu <= 0 | lambda <= 0) return(-Inf)
+  sum(dinvgauss(x, mean = mu, shape = lambda, log = TRUE))
+}
+
+init_ig <- c(mean(x), 1)
+ig_res <- run_mle(loglik_ig, x, init_ig, c("mu_hat","lambda_hat"), c(1e-6, 1e-6))
+
+# -----------------------------
+# 3. Weibull
+# -----------------------------
+x_weib <- x[x > 0]  # Weibull requires positive data
+
+loglik_weib <- function(theta, x) {
+  shape <- theta[1]
+  scale <- theta[2]
+  if(shape <= 0 | scale <= 0) return(-Inf)
+  sum(dweibull(x, shape = shape, scale = scale, log = TRUE))
+}
+
+init_weib <- c(1.2, mean(x_weib))
+weib_res <- run_mle(loglik_weib, x_weib, init_weib, c("shape_hat","scale_hat"), c(1e-6, 1e-6))
+
+# -----------------------------
+# 4. Lognormal
+# -----------------------------
+x_lognorm <- x[x > 0]  # Lognormal requires positive data
+
+loglik_lognorm <- function(theta, x) {
+  meanlog <- theta[1]
+  sdlog <- theta[2]
+  if(sdlog <= 0) return(-Inf)
+  sum(dlnorm(x, meanlog = meanlog, sdlog = sdlog, log = TRUE))
+}
+
+init_lognorm <- c(mean(log(x_lognorm)), sd(log(x_lognorm)))
+lognorm_res <- run_mle(loglik_lognorm, x_lognorm, init_lognorm, c("meanlog_hat","sdlog_hat"), c(-Inf, 1e-6))
+
+# -----------------------------
+# 5. Gamma
+# -----------------------------
+x_gamma <- x[x > 0]
+
+loglik_gamma <- function(theta, x) {
+  shape <- theta[1]
+  rate <- theta[2]
+  if(shape <= 0 | rate <= 0) return(-Inf)
+  sum(dgamma(x, shape = shape, rate = rate, log = TRUE))
+}
+
+init_gamma <- c(1, 1/mean(x_gamma))
+gamma_res <- run_mle(loglik_gamma, x_gamma, init_gamma, c("shape_hat","rate_hat"), c(1e-6, 1e-6))
+
+# -----------------------------
+# Log-likelihood summary (best among models)
+# -----------------------------
+loglik_entry <- tibble(
+  distribution = "Log-likelihood",
+  parameter = "best_max_log_likelihood",
+  estimate = max(
+    norm_res$results$estimate[norm_res$results$parameter == "max_log_likelihood"],
+    ig_res$results$estimate[ig_res$results$parameter == "max_log_likelihood"],
+    weib_res$results$estimate[weib_res$results$parameter == "max_log_likelihood"],
+    lognorm_res$results$estimate[lognorm_res$results$parameter == "max_log_likelihood"],
+    gamma_res$results$estimate[gamma_res$results$parameter == "max_log_likelihood"]
+  )
+)
+
+# -----------------------------
+# Combine all results
+# -----------------------------
+all_results <- bind_rows(
+  norm_res$results %>% mutate(distribution = "Normal"),
+  ig_res$results %>% mutate(distribution = "Inverse-Gaussian"),
+  weib_res$results %>% mutate(distribution = "Weibull"),
+  lognorm_res$results %>% mutate(distribution = "Lognormal"),
+  gamma_res$results %>% mutate(distribution = "Gamma"),
+  loglik_entry
+) %>%
+  select(distribution, parameter, estimate) %>%
+  arrange(distribution)
+
+# Display final tidy results table
+all_results
+
+```
+
+#### 2.3. Count Parameters (m)
+
+Count the number of free (estimated) parameters using the log-likelihood function. This will be used to calculate IC.
+
+```{r}
+# Count number of free parameters for each distribution
+m_params <- tibble(
+  distribution = c("Normal", "Inverse-Gaussian", "Weibull", "Beta", "Gamma"),
+  m_parameters  = c(
+    length(norm_res$fit$par),
+    length(ig_res$fit$par),
+    length(weib_res$fit$par),
+    length(beta_res$fit$par),
+    length(gamma_res$fit$par)
+  )
+)
+
+m_params
+```
+
+#### 2.4. Visualize
+
+Overlay of the fitted PDF (using estimated parameters) onto the histogram:
+
+```{r}
+library(ggplot2)
+
+# Store estimated parameters
+params <- list(
+  Normal = list(mu = norm_res$fit$par[1], sigma = norm_res$fit$par[2]),
+  InverseGaussian = list(mu = ig_res$fit$par[1], lambda = ig_res$fit$par[2]),
+  Weibull = list(shape = weib_res$fit$par[1], scale = weib_res$fit$par[2]),
+  Lognormal = list(meanlog = lognorm_res$fit$par[1], sdlog = lognorm_res$fit$par[2]),
+  Gamma = list(shape = gamma_res$fit$par[1], rate = gamma_res$fit$par[2])
+)
+
+# Helper function for minimal histogram + PDF
+plot_pdf <- function(x_data, fun_pdf, title, color_line="red", fill_hist="grey") {
+  ggplot(data.frame(x=x_data), aes(x=x)) +
+    geom_histogram(aes(y=..density..), bins=30, fill=fill_hist, color=NA, alpha=0.6) +
+    stat_function(fun=fun_pdf, color=color_line, size=1) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(hjust=0.5))
+}
+
+# Create plots
+plot_list <- list()
+
+# Normal
+plot_list$Normal <- plot_pdf(
+  x_data = x,
+  fun_pdf = function(x) dnorm(x, mean=params$Normal$mu, sd=params$Normal$sigma),
+  title = "Normal",
+  color_line="red",
+  fill_hist="lightblue"
+)
+
+# Inverse-Gaussian
+plot_list$InverseGaussian <- plot_pdf(
+  x_data = x,
+  fun_pdf = function(x) dinvgauss(x, mean=params$InverseGaussian$mu, shape=params$InverseGaussian$lambda),
+  title = "Inverse-Gaussian",
+  color_line="darkgreen",
+  fill_hist="lightgreen"
+)
+
+# Weibull (x>0)
+x_weib <- x[x>0]
+plot_list$Weibull <- plot_pdf(
+  x_data = x_weib,
+  fun_pdf = function(x) dweibull(x, shape=params$Weibull$shape, scale=params$Weibull$scale),
+  title = "Weibull",
+  color_line="blue",
+  fill_hist="lightpink"
+)
+
+# Lognormal (x>0)
+x_lognorm <- x[x>0]
+plot_list$Lognormal <- plot_pdf(
+  x_data = x_lognorm,
+  fun_pdf = function(x) dlnorm(x, meanlog=params$Lognormal$meanlog, sdlog=params$Lognormal$sdlog),
+  title = "Lognormal",
+  color_line="purple",
+  fill_hist="lavender"
+)
+
+# Gamma (x>0)
+x_gamma <- x[x>0]
+plot_list$Gamma <- plot_pdf(
+  x_data = x_gamma,
+  fun_pdf = function(x) dgamma(x, shape=params$Gamma$shape, rate=params$Gamma$rate),
+  title = "Gamma",
+  color_line="orange",
+  fill_hist="mistyrose"
+)
+
+# Display plots individually
+plot_list$Normal
+plot_list$InverseGaussian
+plot_list$Weibull
+plot_list$Lognormal
+plot_list$Gamma
+
+```
+
+### Phase 3. Model Fitting
+
+Using the results from Phase 2, we'll calculate 3 different IC for each of the 5 PDFs.
+
+The best model is the one that yields the lowest IC values.
+
+We'll use the following 3 ICs:
+
+-   Akaike IC (AIC)
+
+-   Schwarz Bayesian C (SBC)
+
+-   Information Complexity (ICOMP)
+
+```{r}
+library(dplyr)
+library(tibble)
+library(purrr)  # for map_dfr
+
+# Combine results for all distributions
+dist_list <- list(
+  Normal = norm_res,
+  InverseGaussian = ig_res,
+  Weibull = weib_res,
+  Lognormal = lognorm_res,
+  Gamma = gamma_res
+)
+
+# Function to calculate ICs
+calc_ic <- function(res, n) {
+  logL <- -res$fit$value   # MLE log-likelihood (optim minimizes negative LL)
+  m <- res$m               # number of free parameters
+  
+  AIC  <- 2*m - 2*logL
+  SBC  <- log(n)*m - 2*logL   # BIC / Schwarz criterion
+  # ICOMP (approximate version using C1 complexity = m)
+  ICOMP <- -2*logL + 2*m
+  
+  tibble(
+    AIC = round(AIC, 2),
+    SBC = round(SBC, 2),
+    ICOMP = round(ICOMP, 2)
+  )
+}
+
+# Sample size
+n <- length(x)
+
+# Calculate ICs for all distributions
+ic_table <- map_dfr(names(dist_list), function(dist_name) {
+  res <- dist_list[[dist_name]]
+  calc_ic(res, n) %>%
+    mutate(distribution = dist_name)
+}) %>%
+  select(distribution, everything())
+
+# Display table
+ic_table
+
+```
+
+Select the best fitting model:
+
+```{r}
+library(dplyr)
+
+# Function to select best model for each IC
+select_best_model <- function(ic_table) {
+  ic_table %>%
+    summarise(
+      best_AIC   = distribution[which.min(AIC)],
+      best_SBC   = distribution[which.min(SBC)],
+      best_ICOMP = distribution[which.min(ICOMP)]
+    ) %>%
+    pivot_longer(everything(), names_to = "criterion", values_to = "best_model")
+}
+
+# Apply function
+best_models <- select_best_model(ic_table)
+
+# Display results
+best_models
+
+```
+
+The variable is best fitted by the Inverse Gaussian Distribution Function.
+
+### Phase 4. Kernel Density Estimation
+
+Perform a kernel density estimation (KDE) of the dataset and report the optimal bandwidth value and the IC.
+
+A KDE determines the shape a distribution and how each shape contributes to the overall density.
+
+For the sake of simplicity, we'll use the Gaussian kernel, which produces a smooth, bell-shaped curve. However, other kernels exist: Epanechnikov, rectangular, triangular, etc.
+
+Since the KDE is non-parametric, it doesn’t have explicit parameter estimates like mu and theta for a Normal distribution. But we still want to compare it to parametric models using information criteria (AIC, BIC, ICOMP), which require the log-likelihood estimation (L).
+
+```{r}
+library(dplyr)
+library(tibble)
+
+# -----------------------------
+# 1. Kernel Density Estimation
+# -----------------------------
+kde <- density(x, kernel = "gaussian")  # default Gaussian kernel
+# kde$bw is the bandwidth used
+
+bw_opt <- kde$bw  # optimal bandwidth
+bw_opt
+
+# -----------------------------
+# 2. Estimate log-likelihood for KDE
+# -----------------------------
+# Approximate log-likelihood by summing log-density at observed points
+# We use approx() to interpolate density estimates at data points
+log_density_at_x <- approx(kde$x, kde$y, xout = x)$y
+logL_kde <- sum(log(log_density_at_x))  # log-likelihood
+
+# Number of parameters in KDE: effective number = 1 (bandwidth)
+m_kde <- 1  
+
+# -----------------------------
+# 3. Compute ICs
+# -----------------------------
+n <- length(x)
+
+AIC_kde  <- 2*m_kde - 2*logL_kde
+SBC_kde  <- log(n)*m_kde - 2*logL_kde
+ICOMP_kde <- -2*logL_kde + 2*m_kde
+
+ic_kde <- tibble(
+  method = "KDE",
+  bandwidth = round(bw_opt, 3),
+  log_likelihood = round(logL_kde, 3),
+  AIC = round(AIC_kde, 3),
+  SBC = round(SBC_kde, 3),
+  ICOMP = round(ICOMP_kde, 3)
+)
+
+ic_kde
+
+```
+
+Now let's compare the ICs of the best fitting parametric PDF and the non-parametric KDF:
+
+```{r}
+library(dplyr)
+library(tibble)
+
+# Extract Beta ICs
+pdf_ic <- ic_table %>% 
+  filter(distribution == "InverseGaussian") %>%
+  select(distribution, AIC, SBC, ICOMP)
+
+# Extract KDE ICs
+kde_ic <- ic_kde %>%
+  select(method, AIC, SBC, ICOMP) %>%
+  rename(distribution = method)
+
+# Combine Beta and KDE ICs
+comparison_ic <- bind_rows(pdf_ic, kde_ic) %>%
+  arrange(AIC)  # optional: sort by AIC
+
+# Display table
+comparison_ic
+
+```
+
+To select the best fitting model:
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Function to select best model (lowest IC) for each criterion
+select_best_ic_model <- function(ic_table) {
+  ic_table %>%
+    summarise(
+      best_AIC   = distribution[which.min(AIC)],
+      best_SBC   = distribution[which.min(SBC)],
+      best_ICOMP = distribution[which.min(ICOMP)]
+    ) %>%
+    pivot_longer(everything(), names_to = "criterion", values_to = "best_model")
+}
+
+# Apply function to comparison table
+best_model_ic <- select_best_ic_model(comparison_ic)
+
+# Display results
+best_model_ic
+```
+
+The non-parametric KDE is also better fitting than the parametric Inverse Gaussian PDF.
+
+Let's overlay the KDE to the histogram of stream temperature to observe it's improved fit.
+
+```{r}
+
+# Convert KDE to data frame
+kde_df <- data.frame(x = kde$x, y = kde$y)
+
+#load package
+library(ggplot2)
+
+# Histogram + KDE overlay
+ggplot(data.frame(x = x), aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = NA, alpha = 0.6) +
+  geom_line(data = kde_df, aes(x = x, y = y), color = "black", size = 1) +
+  ggtitle("Histogram with KDE") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+### Conclusion
+
+Using maximum likelihood estimation and three information criteria (AIC, SBC, and ICOMP), we compared the fit of several candidate probability density functions (Normal, Lognormal, Weibull, Gamma, and Inverse-Gaussian) to the stream temperature dataset. Among the parametric models, the Inverse-Gaussian distribution achieved the lowest IC values, suggesting it was the best-fitting parametric PDF. However, when compared with the nonparametric Gaussian Kernel Density Estimation (KDE), the KDE achieved even lower IC values.
+
+This result is consistent with the visual inspection of the data’s histogram, which displayed a bimodal structure. Parametric distributions, including the Inverse-Gaussian, assume unimodality and therefore cannot fully capture the complexity of the observed distribution. In contrast, the KDE adapts more flexibly to the shape of the data, capturing the bimodal pattern and providing a better balance between model complexity and fit.
+
+The implication is that while the Inverse-Gaussian provides a reasonable parametric approximation of the stream temperature distribution, nonparametric approaches like KDE may be more appropriate when the data exhibit multimodality. This highlights the importance of considering both parametric and nonparametric models in environmental data analysis, particularly when the underlying processes produce complex, multimodal distributions.
