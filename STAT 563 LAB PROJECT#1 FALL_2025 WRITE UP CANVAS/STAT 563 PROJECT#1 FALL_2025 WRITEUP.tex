@@ -1,0 +1,242 @@
+%% This document created by Scientific Notebook (R) Version 3.0
+%\input{tcilatex}
+
+
+\documentclass[12pt,thmsa]{article}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage{makeidx}
+\usepackage{sw20jart}
+
+%TCIDATA{TCIstyle=article/art4.lat,jart,sw20jart}
+
+%TCIDATA{OutputFilter=Latex.dll}
+%TCIDATA{Version=5.00.0.2552}
+%TCIDATA{<META NAME="SaveForMode" CONTENT="1">}
+%TCIDATA{Created=Mon Aug 19 14:52:24 1996}
+%TCIDATA{LastRevised=Tuesday, September 30, 2025 13:12:48}
+%TCIDATA{<META NAME="GraphicsSave" CONTENT="32">}
+%TCIDATA{Language=American English}
+%TCIDATA{CSTFile=Exam.cst}
+%TCIDATA{PageSetup=72,72,72,72,0}
+%TCIDATA{Counters=arabic,1}
+%TCIDATA{<META NAME="PrintOptions" CONTENT="32">}
+%TCIDATA{AllPages=
+%H=36
+%F=36,\PARA{038<p type="texpara" tag="Body Text" >\hfill \thepage}
+%}
+
+
+\input{tcilatex}
+
+\begin{document}
+
+
+\begin{tabular}{l}
+Prof. H. Bozdogan \\ 
+Stat-563: Intro Math Stat%
+\end{tabular}
+\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \
+\ \ \ \ \ \ \ 
+\begin{tabular}{c}
+Fall Semester: September 29, 2025 \\ 
+Due on or before Oct. 8, 2025%
+\end{tabular}
+
+\smallskip
+
+\section{ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ STAT 563 LAB PROJECT\#1}
+
+\smallskip
+
+\subsubsection{INSTRUCTIONS:}
+
+\smallskip
+
+\begin{itemize}
+\item \textbf{SHOW\ ALL\ YOUR\ WORK ON SEPARATE PAGES FOR EACH PROBLEM.
+Please submit your write up with the source and pdf with computational
+modules and all your graphs. \underline{\textbf{If you are typing your
+results in LyX or Latex}}. You can zip your files and submit your work by
+uploading to \underline{\textbf{CANVAS}} under your
+NAME\_LASTNAME\_STAT563\_PROJ\#1\_FALL\_2025.}
+
+\item You can use MATLAB, R, or Python computational platform of your
+choice.\ 
+\end{itemize}
+
+\smallskip
+
+\subsubsection{INTRODUCTION}
+
+\vspace{1pt}
+
+\begin{itemize}
+\item Please \textbf{SHOW\ ALL\ YOUR\ WORK FOR EACH PROBLEM. }
+
+\item Submit your work including the source of your write up, the data and
+Matlab modules in a ZIPPED folder under your name: LAST\_NAME\_and\_NAME
+STAT 579 PROJ\#1.zip\textbf{.}
+
+\item Use MATLAB, R, Python, or any other software to carry out your
+graphical visualization and interpret briefly your findings in a narrative
+style.
+\end{itemize}
+
+\smallskip
+
+\section{Project Goal}
+
+\smallskip
+
+The objective of this project is to apply Maximum Likelihood Estimation
+(MLE) and Information Criteria (IC) to identify the most appropriate \textbf{%
+Probability Density Function (PDF)} to model a given dataset. The simulated
+data is given in \textsl{Raw\_Project\_Data.xlsx}. This exercise connects
+theoretical concepts of estimation and model complexity with computational
+practice.
+
+\smallskip
+
+\section{Phase 1: Data Acquisition and Preparation}
+
+\begin{enumerate}
+\item \textbf{Data Selection:} Obtain a real-world, non-normal, continuous
+dataset on your own (e.g., time-to-failure data, wait times, income levels).
+Record the sample size ($n$).
+
+\item \textbf{Exploratory Data Analysis (EDA):}
+
+\begin{itemize}
+\item Generate a histogram or use \texttt{histfit(Data,10,'kernel')} of the
+data.
+
+\item Compute descriptive statistics (mean, variance, skewness, kurtosis).
+
+\item Discuss the data's general shape and bounds (e.g., positive support,
+heavy tails).
+\end{itemize}
+\end{enumerate}
+
+\smallskip
+
+\section{Phase 2: Candidate Model Fitting}
+
+\smallskip
+
+Select and fit a minimum of \textbf{five distinct, non-trivial continuous
+probability distributions} whose characteristics match your data's EDA
+(e.g., Gamma, Weibull, Log-Normal, Inverse Gaussian, Beta).
+
+\subsection{Computational Steps (for each PDF)}
+
+\begin{enumerate}
+\item \textbf{Define Log-Likelihood (log $\mathcal{L}$):} Can you give the
+analytical expression for the log-likelihood function, log $\mathcal{L}(%
+\mathbf{x}|\boldsymbol{\theta })$, where $\mathbf{x}$ is the data and $%
+\boldsymbol{\theta }$ are the parameters.
+
+\item \textbf{Maximum Likelihood Estimation (MLE):} Matlab module provided
+uses numerical optimizer (e.g., \texttt{optim} in R or \texttt{fminsearch})
+to find the parameter estimates $\hat{\boldsymbol{\theta }}$ \ that maximize
+log $\mathcal{L}$. Provide the maximum value, log $\mathcal{L}_{\max }$.
+
+\item \textbf{Count Parameters ($m$):} Record the number of free parameters, 
+$m$, for the model.
+
+\item \textbf{Visualize:} Overlay the fitted PDF (using $\hat{\boldsymbol{%
+\theta }}$) onto the data histogram.
+\end{enumerate}
+
+\smallskip
+
+\section{Phase 3: Model Selection and Information Criteria}
+
+\smallskip
+
+Use the results from Phase 2 to calculate three information criteria for
+each of the models considered.
+
+\subsection{Information Criteria Formulas}
+
+\smallskip
+
+The best model is the one that yields the \textbf{minimum value} for each
+criterion.
+
+\begin{itemize}
+\item \smallskip
+
+\item \textbf{Akaike Information Criterion (}$\mathbf{AIC}$\textbf{):} 
+\[
+AIC=-2\log \mathcal{L}_{\max }+2m 
+\]
+
+\item \textbf{Schwarz Bayesian Criterion (}$\mathbf{SBC/BIC}$\textbf{):} 
+\[
+SBC=-2\log \mathcal{L}_{\max }+m\ln (n) 
+\]
+
+\item \textbf{Information Complexity (}$\mathbf{ICOMP}$\textbf{):} This
+penalizes both the number of parameters and the complexity of the estimated
+Fisher Information Matrix (FIM), \textsc{F }$(\boldsymbol{\theta })$. We
+will use a simplified form based on the Hessian approximation of the FIM. 
+\[
+ICOMP=-2\log \mathcal{L}_{\max }+C_{1F}(\widehat{\text{\textsc{F }}}^{-1}) 
+\]%
+Where $C_{1F}$ is the penalty based on the eigenvalues ($\lambda _{i}$) of
+the estimated asymptotic covariance matrix $\hat{\mathbf{\Sigma }}_{\hat{%
+\boldsymbol{\theta }}}=\widehat{\text{\textsc{F }}}^{-1}$: 
+\[
+C_{1F}=\frac{1}{4(\bar{\lambda})^{2}}\sum_{i=1}^{m}(\lambda _{i}-\bar{\lambda%
+})^{2} 
+\]%
+where $\bar{\lambda}=\frac{1}{m}\sum_{i=1}^{m}\lambda _{i}$ is the mean
+eigenvalue.
+\end{itemize}
+
+\pagebreak
+
+\vspace{1pt}
+
+\section{\protect\vspace{1pt}Phase 4: Kernel Density Estimation}
+
+\vspace{1pt}
+
+\vspace{1pt}Do the kernel density estimation of the simulated DGP (Data
+Generating Process) and your own real data set.
+
+Report the optimal bandwidth value and the information criteria in a table.
+What do you observe? 
+
+\section{Final Report and Discussion}
+
+\smallskip
+
+The final report must include:
+
+\smallskip 
+
+\begin{enumerate}
+\item An Introduction and Data Summary (Phase 1).
+
+\item A detailed presentation of the methodology, including the log $%
+\mathcal{L}$ function for each model (Phase 2).
+
+\item A comprehensive Results Table summarizing log$\mathcal{L}_{\max }$, $m$%
+, AIC, SBC, and ICOMP for all  models fitted.
+
+\item \textbf{Conclusion:} Identify the model selected by each criterion.
+Discuss the consistency (or lack thereof) among AIC, SBC, and $\text{ICOMP}$%
+, and interpret the implications of the chosen model's parameters.
+\end{enumerate}
+
+\smallskip
+
+\begin{center}
+\begin{tabular}{|l|}
+\hline
+IF YOU HAVE QUESTIONS PLEASE DON'T HESITATE TO ASK ME OR DAWSON! \\ \hline
+\end{tabular}
+\end{center}
+
+\end{document}
