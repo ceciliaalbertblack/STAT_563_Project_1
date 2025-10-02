@@ -40,8 +40,12 @@ str(Raw_Project_Data)
 Rename the only column
 
 ```{r}
-Raw_Project_Data$variable <- Raw_Project_Data$`6.6037011007369806` 
-str(Raw_Project_Data)
+library(dplyr)
+
+Raw_Project_Data <- Raw_Project_Data %>%
+  rename(variable = `6.6037011007369806` )
+
+head(Raw_Project_Data)
 ```
 
 Now that we've uploaded the dataset, let's find its sample size (n):
